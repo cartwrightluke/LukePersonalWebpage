@@ -4,6 +4,7 @@
 
 var glmatrix;
 // Best practices in shader loading, courtesy of: http://stackoverflow.com/questions/5878703/webgl-is-there-an-alternative-to-embedding-shaders-in-html
+// And: https://github.com/rhulha/WebGLAndRequireJSDemo
 requirejs(['gl-matrix', 'text!Assignment1.FShader', 'text!Assignment1.VShader', 'webgl-debug'],
 function (glmatrixLoaded, fragmentShaderRaw, vertexShaderRaw, webgldebug) {
     glmatrix = glmatrixLoaded;
@@ -16,7 +17,7 @@ function (glmatrixLoaded, fragmentShaderRaw, vertexShaderRaw, webgldebug) {
     var canvas = document.getElementById("webGLCanvas");
     initGL(canvas);
     gl.enable(gl.DEPTH_TEST);
-
+    gl.enable(gl.BLEND);
     //prepare gl context for debugging
     gl = WebGLDebugUtils.makeDebugContext(gl, 
         //Error logging function
@@ -32,13 +33,11 @@ function (glmatrixLoaded, fragmentShaderRaw, vertexShaderRaw, webgldebug) {
 
     //Prepare the shaders
     initShaders(fragmentShaderRaw, vertexShaderRaw);
-
-    //Draw!
-    drawScene();
+    prepareScene();
+    setInterval(drawScene, 100);
+    
 
 });
-
-
 
 
 //Open GL initialization
@@ -51,7 +50,10 @@ function initGL(canvas) {
         window.location = "http://get.webgl.org";
     } else {
         var canvas = document.getElementById("webGLCanvas");
-        gl = canvas.getContext("webgl");
+        gl = canvas.getContext("webgl", {
+            premultipliedAlpha: false,  // Ask non-premultiplied alpha
+            alpha: false
+        });
         gl.viewportWidth = canvas.width;
         gl.viewportHeight = canvas.height;
         if (!gl) {
@@ -91,11 +93,18 @@ function initShaders(fragmentShaderRaw, vertexShaderRaw) {
     shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
     gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
 
+
+    shaderProgram.textureCoordAttribute = gl.getAttribLocation(shaderProgram, "aTextureCoord");
+    gl.enableVertexAttribArray(shaderProgram.textureCoordAttribute);
+
     //Enable the world view projection matrix
     shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
 
     //Enable the world position offset matrix
     shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+
+
+    shaderProgram.samplerUniform = gl.getUniformLocation(shaderProgram, "uSampler");
 }
 
 //Recalculate the matrices before each draw
@@ -108,22 +117,57 @@ function setMatrixUniforms() {
 
 
 
+var helloWorldTexture;
+function prepareScene() {
+        helloWorldTexture = gl.createTexture(); 
+        helloWorldTexture.image = new Image(); 
+        helloWorldTexture.ready = false; 
+        helloWorldTexture.image.onload = function () { 
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); 
+            gl.bindTexture(gl.TEXTURE_2D, helloWorldTexture); 
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); //Only want to display hello world once
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, helloWorldTexture.image);
+            gl.bindTexture(gl.TEXTURE_2D, null); 
+            helloWorldTexture.ready = true; 
+        }    
+        helloWorldTexture.image.src = "./HelloWorld.png"; 
+}
 
+var xrot = 0;
+var yrot = 0;
+var zrot = 0;
+var xrot2 = 0;
+var yrot2 = 0;
+var zrot2 = 0;
+var maxMag = 0.2;
+var maxInc = 0.04;
 function drawScene() {
+    if (helloWorldTexture.ready != true) return;
+
     //Prepare a colored viewport for drawing on
     gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
-    gl.clearColor(0.6, 0.3, 0.5, 1.0);
+    gl.clearColor(1.0, 1.0, 1.0, 0.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-   
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
     //Create a projection matrix for the current viewpoint
-    glmatrix.mat4.perspective(pMatrix, 0.8, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0);
-   
+    glmatrix.mat4.perspective(pMatrix, 0.8, gl.viewportWidth / gl.viewportHeight, 0.1, 10.0);
+    glmatrix.mat4.ortho(pMatrix,-6, 6, -6, 6, -20, 30);
     //create a world offset matrix for the current object
     glmatrix.mat4.identity(mvMatrix);
+    xrot2 = Math.max(-maxMag, Math.min(maxMag, xrot2 + (Math.random() - 0.5) * maxInc)); xrot = xrot + xrot2;
+    yrot2 = Math.max(-maxMag, Math.min(maxMag, yrot2 + (Math.random() - 0.5) * maxInc)); yrot = yrot + yrot2;
+    zrot2 = Math.max(-maxMag, Math.min(maxMag, zrot2 + (Math.random() - 0.5) * maxInc)); zrot = zrot + zrot2;
+    glmatrix.mat4.rotateX(mvMatrix, mvMatrix, xrot);
+    glmatrix.mat4.rotateY(mvMatrix, mvMatrix, yrot);
+    glmatrix.mat4.rotateZ(mvMatrix, mvMatrix, zrot);
 
 
     //define the object
-    var size = 0.1   ;
+    var size = 2  ;
     var vertices = [
     -1.0 * size, -1.0 * size, 0.0,
      1.0 * size, -1.0 * size, 0.0,
@@ -154,6 +198,17 @@ function drawScene() {
     var vertexIndexBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, vertexIndexBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(vertexIndices), gl.STATIC_DRAW);
+
+    var textureCoordBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, textureCoordBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoords), gl.STATIC_DRAW);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, textureCoordBuffer);
+    gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, 2, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0); 
+    gl.bindTexture(gl.TEXTURE_2D, helloWorldTexture); 
+    gl.uniform1i(gl.getUniformLocation(shaderProgram, "uSampler"), 0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, verticesBuffer);
     gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, 3, gl.FLOAT, false, 0, 0);
