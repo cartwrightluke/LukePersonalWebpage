@@ -106,7 +106,7 @@ function onScreenClick(event) {
         xProp = (x - (rect[0 + 0] * xc + xc)) / ((rect[8 + 0] - rect[0 + 0]) * xc);
         yProp = (y - (rect[0 + 1] * yc + yc)) / ((rect[8 + 1] - rect[0 + 1]) * yc);
 
-        split(xProp, yProp)
+        split(xProp, 1- yProp)
     }
 
 
